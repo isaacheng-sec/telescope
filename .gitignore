@@ -1,0 +1,6 @@
+spiderweb
+*.o
+
+
+.vscode/
+.DS_Store
