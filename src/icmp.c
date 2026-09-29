@@ -15,15 +15,17 @@
 
 #include "icmp.h"
 
+// returns the current time, measured in milliseconds (for comparing)
 double now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
 }
 
+// sets up kernel bookkeeping for a new endpoint. Returns the handle (file descriptor)
 int create_icmp_socket(void) { 
     
-    int sock = socket(  // sets up kernel bookkeeping for a new endpoint and gives the handle
+    int sock = socket(
                         // sock is a local handle to a kernel data structure 
         AF_INET,        // ipv4 
         SOCK_RAW,       // raw socket, below transport abstraction
@@ -35,6 +37,7 @@ int create_icmp_socket(void) {
     return sock;
 }
 
+// builds ICMP echo header for a given sequence and id number
 struct icmphdr build_icmp_echo(uint16_t sequence, uint16_t id) {
 
   // building ICMP header
@@ -49,7 +52,7 @@ struct icmphdr build_icmp_echo(uint16_t sequence, uint16_t id) {
 
 }
 
-
+// calculate the checksum of the packet data. Returns the 16-bit checksum value
 uint16_t checksum(void *data, int len) {
     uint16_t *buf = data; // reinterpret passed-in address as pointer to 16-bit chunks
     uint32_t sum = 0;
@@ -75,10 +78,10 @@ uint16_t checksum(void *data, int len) {
 
 }
 
+// blocks until a packet arrives on the socket, then copies it to buffer
 int receive_icmp_reply(int sock, char *buffer, size_t buflen,
                         struct sockaddr_in *from, socklen_t *fromlen) {
 
-    // blocks until a packet arrives on the socket, then copies it to buffer
     ssize_t bytes = recvfrom(sock, buffer, buflen, 0, (struct sockaddr *)from, fromlen);
 
     if (bytes < 0) {
@@ -90,6 +93,7 @@ int receive_icmp_reply(int sock, char *buffer, size_t buflen,
 
 }
 
+// checks packet validity and prints if valid
 int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from, 
                         double sent_ms, uint16_t expected_id, uint16_t expected_seq) {
 
@@ -140,6 +144,7 @@ int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from,
 
 }
 
+// poll socket until data is ready, then receive+print. Returns 1 for a successful reply, 0 for a timeout
 int wait_for_reply(int sock, uint16_t id, uint16_t seq,
                     int timeout_ms, double sent_ms) {
     char buf[1024];
