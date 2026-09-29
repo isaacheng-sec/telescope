@@ -9,8 +9,17 @@
 #include <netinet/ip.h>
 #include <arpa/inet.h>
 #include <sys/time.h>
+#include <time.h>
+#include <poll.h>
+#include <errno.h>
 
 #include "icmp.h"
+
+double now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+}
 
 int create_icmp_socket(void) { 
     
@@ -81,36 +90,84 @@ int receive_icmp_reply(int sock, char *buffer, size_t buflen,
 
 }
 
-void print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from, struct timeval *sent_time, uint16_t expected_id) {
+int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from, 
+                        double sent_ms, uint16_t expected_id, uint16_t expected_seq) {
 
+    if (bytes < (int)sizeof(struct iphdr)) {
+        return 0;       // check if there's enough bytes for an IP header to be interpreted
+    }
+    // safe to read IP header and ihl field
     struct iphdr *ip_hdr = (struct iphdr *)buffer;
     int ip_header_len = ip_hdr->ihl * 4; // converting from 32-bit words to bytes
 
+    // check if the header line is valid and if an icmp header exists after it
+    if (ip_hdr->ihl < 5 || bytes < ip_header_len + (int)sizeof(struct icmphdr)) {
+        return 0;
+    }
+
+    // safe to read ICMP header
     struct icmphdr *icmp_hdr = (struct icmphdr *)(buffer + ip_header_len);
 
     // ignore anything that isn't a reply or addressed to this socket
     if (icmp_hdr->type != ICMP_ECHOREPLY) {
-        return;
+        return 0;
     }
 
     if (icmp_hdr->un.echo.id != expected_id) {
-        return;
+        return 0;
+    }
+    // ignore packets with improper sequence number
+    if (ntohs(icmp_hdr->un.echo.sequence) != expected_seq) {
+        return 0;
     }
 
-    // time calculations for RTT
-    struct timeval now;
-    gettimeofday(&now, NULL);
-    double rtt_ms = (now.tv_sec - sent_time->tv_sec) * 1000.0 +
-                    (now.tv_usec - sent_time->tv_usec) / 1000.0;
+
+    // time now minus time it was sent, converted to ms
+    double rtt_ms = now_ms() - sent_ms;
 
     char src_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &from->sin_addr, src_ip, sizeof(src_ip));
 
-    printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.2f ms\n",
+    printf("Response! %d bytes from %s: seq=%d ttl=%d time=%.2f ms\n",
         bytes - ip_header_len,
         src_ip,
         ntohs(icmp_hdr->un.echo.sequence),
         ip_hdr->ttl,
         rtt_ms);
 
+    return 1; // successful echo reply
+
+
+}
+
+int wait_for_reply(int sock, uint16_t id, uint16_t seq,
+                    int timeout_ms, double sent_ms) {
+    char buf[1024];
+    struct sockaddr_in from;
+    double deadline = sent_ms + timeout_ms;
+
+    for (;;) {
+        double remaining = deadline - now_ms();
+        if (remaining <= 0) {
+            return 0;       // deadline passed
+        }
+        
+        struct pollfd pfd = { .fd = sock, .events = POLLIN }; // polling request
+        int ready = poll(&pfd, 1, (int)remaining + 1); // wait for data or timeout (remaining time max)
+
+        if (ready == 0) return 0;       // poll timed out
+        if (ready < 0) {
+            if (errno != EINTR) perror("poll");
+            return -1;          // signal or real error
+        }
+
+        // socket is readable, so recvfrom() won't block
+        socklen_t fromlen = sizeof(from);
+        int bytes = receive_icmp_reply(sock, buf, sizeof(buf), &from, &fromlen);
+        if (bytes < 0) return -1;
+
+        if (print_icmp_reply(buf, bytes, &from, sent_ms, id, seq)) {
+            return 1;       // print returns 1 and displays info if all checks for seq, id, etc pass
+        }
+    }
 }

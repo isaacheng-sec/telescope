@@ -7,6 +7,8 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 
+double now_ms(void);
+
 
 // Creates a raw ICMP socket. Returns socket fd or -1 on failure
 int create_icmp_socket(void);
@@ -20,10 +22,10 @@ uint16_t checksum(void *data, int len);
 int receive_icmp_reply(int sock, char *buffer, size_t buflen,
                         struct sockaddr_in *from, socklen_t *fromlen);
 
-void print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from,
-                        struct timeval *sent_time, uint16_t expected_id);
+int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from,
+                        double sent_ms, uint16_t expected_id, uint16_t expected_seq);
                     
-
+int wait_for_reply(int sock, uint16_t id, uint16_t seq, int timeout_ms, double sent_ms);
 
 
 #endif

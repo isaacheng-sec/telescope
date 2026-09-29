@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c11 -g
+CFLAGS = -Wall -Wextra -std=gnu11 -g
 SRC_DIR = src
 BUILD_DIR = build
 TARGET = telescope
