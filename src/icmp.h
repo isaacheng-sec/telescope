@@ -19,7 +19,7 @@ struct icmphdr build_icmp_echo(uint16_t sequence, uint16_t id);
 // Calculates and returns the Internet checksum (RFC 1071)
 uint16_t checksum(void *data, int len);
 
-int receive_icmp_reply(int sock, char *buffer, size_t buflen,
+int block_for_icmp(int sock, char *buffer, size_t buflen,
                         struct sockaddr_in *from, socklen_t *fromlen);
 
 int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from,

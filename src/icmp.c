@@ -79,7 +79,7 @@ uint16_t checksum(void *data, int len) {
 }
 
 // blocks until a packet arrives on the socket, then copies it to buffer
-int receive_icmp_reply(int sock, char *buffer, size_t buflen,
+int block_for_icmp(int sock, char *buffer, size_t buflen,
                         struct sockaddr_in *from, socklen_t *fromlen) {
 
     ssize_t bytes = recvfrom(sock, buffer, buflen, 0, (struct sockaddr *)from, fromlen);
@@ -168,7 +168,7 @@ int wait_for_reply(int sock, uint16_t id, uint16_t seq,
 
         // socket is readable, so recvfrom() won't block
         socklen_t fromlen = sizeof(from);
-        int bytes = receive_icmp_reply(sock, buf, sizeof(buf), &from, &fromlen);
+        int bytes = block_for_icmp(sock, buf, sizeof(buf), &from, &fromlen);
         if (bytes < 0) return -1;
 
         if (print_icmp_reply(buf, bytes, &from, sent_ms, id, seq)) {

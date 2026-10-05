@@ -1,7 +1,6 @@
 telescope
 main
 *.o
-
-
+build/
 .vscode/
 .DS_Store
