@@ -12,7 +12,7 @@
 #define TIMEOUT_MS 2000
 #define MAX_TRIES 10
 
-int main(int argc, char** argv) {
+int main() {
 
 
     int sock = create_icmp_socket();

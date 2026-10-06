@@ -176,3 +176,17 @@ int wait_for_reply(int sock, uint16_t id, uint16_t seq,
         }
     }
 }
+
+void onlyprint_icmp(struct print_info *print_struct) {
+    char src_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &print_struct->src_addr, src_ip, sizeof(src_ip));
+
+    printf("Response! %d bytes from %s: seq=%d ttl=%d time=%.2f ms\n",
+        print_struct->icmp_bytes,
+        src_ip,
+        ntohs(print_struct->sequence),
+        print_struct->ttl,
+        print_struct->rtt_ms);
+
+}
+
