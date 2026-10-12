@@ -177,7 +177,7 @@ int wait_for_reply(int sock, uint16_t id, uint16_t seq,
     }
 }
 
-void onlyprint_icmp(struct print_info *print_struct) {
+void onlyprint_icmp(const struct print_info *print_struct) {
     char src_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &print_struct->src_addr, src_ip, sizeof(src_ip));
 
