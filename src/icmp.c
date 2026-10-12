@@ -79,7 +79,7 @@ uint16_t checksum(void *data, int len) {
 }
 
 // blocks until a packet arrives on the socket, then copies it to buffer
-int block_for_icmp(int sock, char *buffer, size_t buflen,
+int receive_icmp(int sock, char *buffer, size_t buflen,
                         struct sockaddr_in *from, socklen_t *fromlen) {
 
     ssize_t bytes = recvfrom(sock, buffer, buflen, 0, (struct sockaddr *)from, fromlen);
@@ -93,15 +93,63 @@ int block_for_icmp(int sock, char *buffer, size_t buflen,
 
 }
 
-// checks packet validity and prints if valid
-int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from, 
-                        double sent_ms, uint16_t expected_id, uint16_t expected_seq) {
 
+// poll socket until data is ready, then receive and parse. Returns 1 for a successful reply, 0 for a timeout
+int wait_for_reply(int sock, uint16_t id, uint16_t seq,
+                    int timeout_ms, double sent_ms, struct print_info *out) {
+    char buf[1024];
+    struct sockaddr_in from;
+    double deadline = sent_ms + timeout_ms;
+
+    for (;;) {
+        double remaining = deadline - now_ms();
+        if (remaining <= 0) {
+            return 0;       // deadline passed
+        }
+        
+        struct pollfd pfd = { .fd = sock, .events = POLLIN }; // polling request
+        int ready = poll(&pfd, 1, (int)remaining + 1); // wait for data or timeout (remaining time max)
+
+        if (ready == 0) return 0;       // poll timed out
+        if (ready < 0) {
+            if (errno != EINTR) perror("poll");
+            return -1;          // signal or real error
+        }
+
+        // socket is readable, so recvfrom() won't block
+        socklen_t fromlen = sizeof(from);
+        int bytes = receive_icmp(sock, buf, sizeof(buf), &from, &fromlen);
+        double recv_ms = now_ms();
+        if (bytes < 0) return -1;
+
+        // ignore any packets that don't pass parsing
+        if (parse_icmp_header(buf, bytes, id, seq, out)) {
+           out->rtt_ms = recv_ms - sent_ms;
+            return 1;
+        }
+    }
+}
+
+void print_icmp(const struct print_info *print_struct) {
+    char src_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &print_struct->src_addr, src_ip, sizeof(src_ip));
+
+    printf("Response! %d bytes from %s: seq=%d ttl=%d time=%.2f ms\n",
+        print_struct->icmp_bytes,
+        src_ip,
+        ntohs(print_struct->sequence),
+        print_struct->ttl,
+        print_struct->rtt_ms);
+
+}
+
+// check fields of ICMP header and fill in info struct if it passes
+int parse_icmp_header(const char *buffer, int bytes, uint16_t expected_id, uint16_t expected_seq, struct print_info *out) {
     if (bytes < (int)sizeof(struct iphdr)) {
         return 0;       // check if there's enough bytes for an IP header to be interpreted
     }
     // safe to read IP header and ihl field
-    struct iphdr *ip_hdr = (struct iphdr *)buffer;
+    const struct iphdr *ip_hdr = (struct iphdr *)buffer;
     int ip_header_len = ip_hdr->ihl * 4; // converting from 32-bit words to bytes
 
     // check if the header line is valid and if an icmp header exists after it
@@ -125,68 +173,10 @@ int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from,
         return 0;
     }
 
+    out->icmp_bytes = bytes - ip_header_len;
+    out->sequence = icmp_hdr->un.echo.sequence;
+    out->ttl = ip_hdr->ttl;
+    out->src_addr.s_addr = ip_hdr->saddr;
 
-    // time now minus time it was sent, converted to ms
-    double rtt_ms = now_ms() - sent_ms;
-
-    char src_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &from->sin_addr, src_ip, sizeof(src_ip));
-
-    printf("Response! %d bytes from %s: seq=%d ttl=%d time=%.2f ms\n",
-        bytes - ip_header_len,
-        src_ip,
-        ntohs(icmp_hdr->un.echo.sequence),
-        ip_hdr->ttl,
-        rtt_ms);
-
-    return 1; // successful echo reply
-
-
+    return 1;
 }
-
-// poll socket until data is ready, then receive+print. Returns 1 for a successful reply, 0 for a timeout
-int wait_for_reply(int sock, uint16_t id, uint16_t seq,
-                    int timeout_ms, double sent_ms) {
-    char buf[1024];
-    struct sockaddr_in from;
-    double deadline = sent_ms + timeout_ms;
-
-    for (;;) {
-        double remaining = deadline - now_ms();
-        if (remaining <= 0) {
-            return 0;       // deadline passed
-        }
-        
-        struct pollfd pfd = { .fd = sock, .events = POLLIN }; // polling request
-        int ready = poll(&pfd, 1, (int)remaining + 1); // wait for data or timeout (remaining time max)
-
-        if (ready == 0) return 0;       // poll timed out
-        if (ready < 0) {
-            if (errno != EINTR) perror("poll");
-            return -1;          // signal or real error
-        }
-
-        // socket is readable, so recvfrom() won't block
-        socklen_t fromlen = sizeof(from);
-        int bytes = block_for_icmp(sock, buf, sizeof(buf), &from, &fromlen);
-        if (bytes < 0) return -1;
-
-        if (print_icmp_reply(buf, bytes, &from, sent_ms, id, seq)) {
-            return 1;       // print returns 1 and displays info if all checks for seq, id, etc pass
-        }
-    }
-}
-
-void onlyprint_icmp(const struct print_info *print_struct) {
-    char src_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &print_struct->src_addr, src_ip, sizeof(src_ip));
-
-    printf("Response! %d bytes from %s: seq=%d ttl=%d time=%.2f ms\n",
-        print_struct->icmp_bytes,
-        src_ip,
-        ntohs(print_struct->sequence),
-        print_struct->ttl,
-        print_struct->rtt_ms);
-
-}
-

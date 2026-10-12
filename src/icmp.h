@@ -30,15 +30,19 @@ struct icmphdr build_icmp_echo(uint16_t sequence, uint16_t id);
 // Calculates and returns the Internet checksum (RFC 1071)
 uint16_t checksum(void *data, int len);
 
-int block_for_icmp(int sock, char *buffer, size_t buflen,
+int receive_icmp(int sock, char *buffer, size_t buflen,
                         struct sockaddr_in *from, socklen_t *fromlen);
 
 int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from,
                         double sent_ms, uint16_t expected_id, uint16_t expected_seq);
                     
-int wait_for_reply(int sock, uint16_t id, uint16_t seq, int timeout_ms, double sent_ms);
+int wait_for_reply(int sock, uint16_t id, uint16_t seq, int timeout_ms, double sent_ms,
+                    struct print_info *out);
 
-void onlyprint_icmp(const struct print_info *print_info);
+int parse_icmp_header(const char *buffer, int bytes, uint16_t expected_id, 
+                        uint16_t expected_seq, struct print_info *out);
+
+void print_icmp(const struct print_info *print_info);
 
 
 #endif

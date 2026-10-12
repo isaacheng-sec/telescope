@@ -18,9 +18,11 @@ int main() {
     int sock = create_icmp_socket();
     if (sock < 0) { exit(1); }
     uint16_t id = getpid() & 0xFFFF;
+    struct print_info icmp_info;
 
     struct sockaddr_in dest;
     memset(&dest, 0, sizeof(dest));
+    memset(&icmp_info, 0, sizeof(icmp_info));
     dest.sin_family = AF_INET;
     inet_pton(AF_INET, "192.168.0.201", &dest.sin_addr);
 
@@ -31,8 +33,13 @@ int main() {
 
         sendto(sock, &hdr, sizeof(hdr), 0, (struct sockaddr*)&dest, sizeof(dest));
 
-        int r = wait_for_reply(sock, id, sequence, TIMEOUT_MS, sent_ms);
+        int r = wait_for_reply(sock, id, sequence, TIMEOUT_MS, sent_ms, &icmp_info);
         if (r == 0) printf("Request timed out\n");
+        if (r == 1) print_icmp(&icmp_info);
+        if (r == -1) {
+            // TODO: error checking
+            return -1;
+        }
 
         double elapsed = now_ms() - sent_ms;
         double remaining_time = INTERVAL_MS - (elapsed);
