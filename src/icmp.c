@@ -12,6 +12,7 @@
 #include <time.h>
 #include <poll.h>
 #include <errno.h>
+#include <string.h>
 
 #include "icmp.h"
 
@@ -95,7 +96,7 @@ int receive_icmp(int sock, char *buffer, size_t buflen,
 
 
 // poll socket until data is ready, then receive and parse. Returns 1 for a successful reply, 0 for a timeout
-int wait_for_reply(int sock, uint16_t id, uint16_t seq,
+int wait_for_reply(int sock, uint16_t id, uint16_t seq, uint32_t expected_addr,
                     int timeout_ms, double sent_ms, struct print_info *out) {
     char buf[1024];
     struct sockaddr_in from;
@@ -123,7 +124,7 @@ int wait_for_reply(int sock, uint16_t id, uint16_t seq,
         if (bytes < 0) return -1;
 
         // ignore any packets that don't pass parsing
-        if (parse_icmp_header(buf, bytes, id, seq, out)) {
+        if (parse_icmp_header(buf, bytes, id, seq, expected_addr, out)) {
            out->rtt_ms = recv_ms - sent_ms;
             return 1;
         }
@@ -144,7 +145,7 @@ void print_icmp(const struct print_info *print_struct) {
 }
 
 // check fields of ICMP header and fill in info struct if it passes
-int parse_icmp_header(const char *buffer, int bytes, uint16_t expected_id, uint16_t expected_seq, struct print_info *out) {
+int parse_icmp_header(const char *buffer, int bytes, uint16_t expected_id, uint16_t expected_seq, uint32_t expected_addr, struct print_info *out) {
     if (bytes < (int)sizeof(struct iphdr)) {
         return 0;       // check if there's enough bytes for an IP header to be interpreted
     }
@@ -154,6 +155,11 @@ int parse_icmp_header(const char *buffer, int bytes, uint16_t expected_id, uint1
 
     // check if the header line is valid and if an icmp header exists after it
     if (ip_hdr->ihl < 5 || bytes < ip_header_len + (int)sizeof(struct icmphdr)) {
+        return 0;
+    }
+
+    // check if source address matches what was expected
+    if (ip_hdr->saddr != expected_addr) {
         return 0;
     }
 
@@ -179,4 +185,22 @@ int parse_icmp_header(const char *buffer, int bytes, uint16_t expected_id, uint1
     out->src_addr.s_addr = ip_hdr->saddr;
 
     return 1;
+}
+
+// full "ping a host" function. returns 1 for alive, 0 for no response, fills in print_info on success
+int ping_host(int sock, uint16_t id, uint16_t sequence, const struct sockaddr_in *dest_addr, int timeout_ms, struct print_info *out) {
+    
+    struct icmphdr hdr = build_icmp_echo(sequence, id);
+    uint32_t target_addr = dest_addr->sin_addr.s_addr; // struct sockaddr_in -> struct sin_addr -> field s_addr
+    
+    double sent_ms = now_ms();  // for rtt calculation
+    int sent_status = sendto(sock, &hdr, sizeof(hdr), 0, (const struct sockaddr *) dest_addr, sizeof(struct sockaddr_in));
+   
+    if (sent_status == -1) {
+         perror("sendto");
+         return -1;
+    }
+
+    int r = wait_for_reply(sock, id, sequence, target_addr, timeout_ms, sent_ms, out);
+    return r;
 }

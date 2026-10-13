@@ -32,17 +32,16 @@ uint16_t checksum(void *data, int len);
 
 int receive_icmp(int sock, char *buffer, size_t buflen,
                         struct sockaddr_in *from, socklen_t *fromlen);
-
-int print_icmp_reply(char *buffer, int bytes, struct sockaddr_in *from,
-                        double sent_ms, uint16_t expected_id, uint16_t expected_seq);
                     
-int wait_for_reply(int sock, uint16_t id, uint16_t seq, int timeout_ms, double sent_ms,
+int wait_for_reply(int sock, uint16_t id, uint16_t seq, uint32_t expected_addr, int timeout_ms, double sent_ms,
                     struct print_info *out);
 
 int parse_icmp_header(const char *buffer, int bytes, uint16_t expected_id, 
-                        uint16_t expected_seq, struct print_info *out);
+                        uint16_t expected_seq, uint32_t expected_addr, struct print_info *out);
 
 void print_icmp(const struct print_info *print_info);
+
+int ping_host(int sock, uint16_t id, uint16_t sequence, const struct sockaddr_in *dest_addr, int timeout_ms, struct print_info *out);
 
 
 #endif
